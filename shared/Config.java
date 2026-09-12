@@ -12,7 +12,7 @@ public final class Config {
 
     public static final double VEHICLE_LENGTH = 30.0;
     public static final double SAFETY_GAP = 10.0;
-    public static final double VEHICLE_SPEED = 60.0; // px/sec
+    public static final double VEHICLE_SPEED = 60.0;
 
     public static final double LANE_LENGTH = (WINDOW_W / 2.0) - INTERSECTION_HALF;
     public static final int LANE_CAPACITY = (int) Math.floor(LANE_LENGTH / (VEHICLE_LENGTH + SAFETY_GAP));
