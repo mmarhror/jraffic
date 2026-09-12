@@ -12,5 +12,11 @@ public class Renderer {
           gc.setFill(Color.DARKGRAY);
           gc.fillRect(0, 360, 800, 80);
           gc.fillRect(360, 0, 80, 800);
+          gc.setStroke(Color.WHITE);
+          gc.setLineWidth(3);
+          gc.strokeLine(0, 400, 340, 400);
+          gc.strokeLine(460, 400, 800, 400);
+          gc.strokeLine(400, 0, 400, 340);
+          gc.strokeLine(400, 460, 400, 800);
     }
 }
