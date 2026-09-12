@@ -4,7 +4,7 @@ import javafx.scene.canvas.Canvas;
 import javafx.scene.canvas.GraphicsContext;
 import javafx.scene.layout.Pane;
 import javafx.stage.Stage;
-
+import ui.Renderer;
 public class Main extends Application {
 
     @Override
@@ -13,6 +13,8 @@ public class Main extends Application {
         GraphicsContext gc = canvas.getGraphicsContext2D();
         Pane root = new Pane(canvas);
         Scene scene = new Scene(root, 800, 800);
+        Renderer renderer = new Renderer();
+        renderer.draw(gc, null, null);
         stage.setTitle("Traffic Simulation");
         stage.setScene(scene);
         stage.show();
