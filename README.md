@@ -1,195 +1,86 @@
-# How to Work 100% in Parallel from Day 1
+# JavaFX Traffic Intersection Simulation
 
-To work completely in parallel without waiting for anyone, agree on the exact method signatures.
+This project is a small JavaFX traffic-light simulation that models an urban four-way intersection. Vehicles are spawned from each side of the intersection, follow predefined turn routes, stop at red lights, and interact with a traffic controller that cycles directions and handles congestion.
 
-Each person uses a 1-line "dummy" mock while building their own part so their code compiles and runs immediately:
+## Features
 
-* **Abdelkafy** mocks the light: assumes it's always `GREEN` until Med finishes.
-* **Med** mocks the queue: passes a hardcoded number (e.g., `3`) until Abdelkafy finishes.
-* **Mimoun** mocks vehicles & lights: puts 2 hardcoded dummy rectangles on screen to test rendering, before hooking up Abdelkafy and Med.
+- JavaFX-based graphical simulation
+- Four-way traffic intersection with lane markings and stop lines
+- Vehicles that can go straight, left, or right
+- Red/green traffic-light logic with round-robin switching
+- Congestion-based green extension logic
+- Safe following-distance logic and anti-overlap spawning
+- Animated vehicle movement using a frame loop
+- Route-color legend on screen
 
----
+## Controls
 
-## Folder Structure
+- Up Arrow: spawn vehicle from the south side, moving toward the intersection
+- Down Arrow: spawn vehicle from the north side, moving toward the intersection
+- Right Arrow: spawn vehicle from the west side, moving toward the intersection
+- Left Arrow: spawn vehicle from the east side, moving toward the intersection
+- R: spawn a vehicle from a random direction
+- Esc: exit the application
+
+## Project Structure
 
 ```text
-road-intersection/
-├── Main.java                  ← Mimoun (entry point)
-├── shared/                    ← ALL (copy-paste on Day 1)
+jraffic/
+├── Main.java
+├── pod.xml
+├── README.md
+├── shared/
 │   ├── Config.java
 │   ├── Direction.java
-│   ├── Turn.java
-│   └── LightColor.java
-├── simulation/                ← Abdelkafy
-│   ├── Vehicle.java
-│   └── Simulation.java
-├── traffic/                   ← Med
-│   ├── TrafficLight.java
-│   └── LightController.java
-└── ui/                        ← Mimoun
+│   ├── LightColor.java
+│   └── Turn.java
+├── simulation/
+│   ├── Simulation.java
+│   └── Vehicle.java
+├── traffic/
+│   ├── LightController.java
+│   └── TrafficLight.java
+└── ui/
     └── Renderer.java
-
 ```
 
----
+## Core Logic Overview
 
-## Exact Class Contracts (No guessing needed)
+### Shared configuration
+The project centralizes intersection dimensions, vehicle behavior, and timing in `shared.Config.java`.
 
-### Shared Files (create once, commit immediately)
+### Vehicle simulation
+`simulation/Vehicle.java` stores each vehicle's route, heading, and progress along the path. It applies:
 
-#### `shared/Config.java`
+- stop-line red-light behavior
+- safe following-distance checks
+- route-based movement with a fixed speed
+- turn-based route generation
 
-```java
-package shared;
+### Traffic controller
+`traffic/LightController.java` manages the active green direction and checks the queue to decide when to switch phases or extend the current green period.
 
-public final class Config {
-    private Config() {}
+### Rendering
+`ui/Renderer.java` draws the roads, lane markings, lights, vehicles, and route-color legend.
 
-    public static final int WINDOW_W = 800;
-    public static final int WINDOW_H = 800;
-    public static final double CENTER_X = WINDOW_W / 2.0;
-    public static final double CENTER_Y = WINDOW_H / 2.0;
-    public static final double LANE_WIDTH = 40.0;
-    public static final double INTERSECTION_HALF = LANE_WIDTH;
+### Application entry
+`Main.java` creates the JavaFX stage, canvas, animation timer, and input listeners.
 
-    public static final double VEHICLE_LENGTH = 30.0;
-    public static final double SAFETY_GAP = 10.0;
-    public static final double VEHICLE_SPEED = 60.0; // px/sec
+## Running the Project
 
-    public static final double LANE_LENGTH = (WINDOW_W / 2.0) - INTERSECTION_HALF;
-    public static final int LANE_CAPACITY = (int) Math.floor(LANE_LENGTH / (VEHICLE_LENGTH + SAFETY_GAP));
+This project is a JavaFX application and expects a JavaFX-capable Java runtime/tooling configuration. The project includes JavaFX dependencies in `pod.xml`.
 
-    public static final double GREEN_TIME = 5.0;
-    public static final double ALL_RED_TIME = 1.0;
-    public static final double SPAWN_MIN_GAP = VEHICLE_LENGTH + SAFETY_GAP;
-}
+Run it through your JavaFX-enabled IDE or project launcher, or use a JavaFX Maven/Gradle run setup configured for the project.
 
-```
+## Notes
 
-#### `shared/Direction.java`
+- Vehicles are color-coded by route:
+  - Straight: yellow
+  - Left turn: blue
+  - Right turn: magenta
+- The simulation enforces a minimal spawn gap to avoid immediate vehicle overlap in the same lane.
+- The traffic controller uses a strict single-green safety rule to prevent conflicting directions from being green at the same time.
 
-```java
-package shared;
+## License
 
-public enum Direction { NORTH, SOUTH, EAST, WEST }
-
-```
-
-#### `shared/Turn.java`
-
-```java
-package shared;
-
-public enum Turn { STRAIGHT, LEFT, RIGHT }
-
-```
-
-#### `shared/LightColor.java`
-
-```java
-package shared;
-
-public enum LightColor { RED, GREEN }
-
-```
-
----
-
-### Abdelkafy — `simulation/`
-
-**Goal:** Physics, movement, safe distance, stop line logic, spawning.
-
-#### 1. `simulation/Vehicle.java`
-
-**Must expose:**
-
-* `double getX()`, `double getY()`, `double getAngle()` (for Mimoun to draw)
-* `Turn getTurn()` (to determine color: Straight = Yellow, Left = Blue, Right = Magenta)
-* `void update(double dt, Vehicle ahead, LightColor light)`:
-* If approaching stop line and `light == RED` → stop.
-* If vehicle ahead exists and distance < `SAFETY_GAP` → stop.
-* Otherwise → move along predefined path at `VEHICLE_SPEED`.
-
-
-
-#### 2. `simulation/Simulation.java`
-
-**Must expose:**
-
-* `void spawnVehicle(Direction dir)`: Pick random `Turn`. If the newest vehicle in that lane is closer than `SPAWN_MIN_GAP` to the spawn point, reject/do nothing (anti-spam rule).
-* `void update(double dt, traffic.LightController lights)`: Update all vehicles and remove those off-screen.
-* `int getQueueLength(Direction dir)`: Count vehicles waiting before the stop line in that direction (used by Med).
-* `List<Vehicle> getVehicles()` (used by Mimoun).
-
-> **How Abdelkafy works alone:** Create a dummy light returning `GREEN` to test vehicle movement and turns before Med is done.
-
----
-
-### Med — `traffic/`
-
-**Goal:** 2-color traffic lights, non-conflicting cycle, dynamic congestion handling.
-
-#### 1. `traffic/TrafficLight.java`
-
-**Must expose:**
-
-* `Direction getDirection()`
-* `LightColor getColor()`
-* `double getX()`, `double getY()` (position at stop line for Mimoun to draw)
-
-#### 2. `traffic/LightController.java`
-
-**Must expose:**
-
-* `LightColor getLightFor(Direction dir)` (used by Abdelkafy's vehicles).
-* `List<TrafficLight> getLights()` (used by Mimoun to draw).
-* `void update(double dt, simulation.Simulation sim)`:
-* Cycles phases: (1) N+S Green → (2) All Red → (3) E+W Green → (4) All Red.
-* Dynamic Congestion Rule: Check `sim.getQueueLength(dir)`. If a lane approaches capacity (≥ 80% `LANE_CAPACITY`), extend its green phase to clear congestion.
-
-
-
-> **How Med works alone:** In `update()`, use a hardcoded value instead of `sim.getQueueLength(dir)` to verify light cycles and extensions in console prints.
-
----
-
-### Mimoun — `ui/` + `Main.java`
-
-**Goal:** Window, rendering roads/cars/lights, key bindings.
-
-#### 1. `ui/Renderer.java`
-
-**Must expose:**
-
-* `void draw(GraphicsContext gc, simulation.Simulation sim, traffic.LightController lights)`:
-* Clear screen & draw 2 crossing roads (gray) + lane markings (white).
-* Draw stop lines.
-* Draw each traffic light as a Red or Green circle at its position.
-* Draw each vehicle as a rectangle at (x, y) rotated by angle. Color based on `Turn` (Straight = Yellow, Left = Blue, Right = Magenta).
-* Draw color legend in a corner.
-
-
-
-#### 2. `Main.java` (Root)
-
-* Sets up JavaFX Stage, Scene (800×800), and Canvas.
-* Runs `AnimationTimer`:
-```java
-sim.update(dt, lights);
-lights.update(dt, sim);
-renderer.draw(gc, sim, lights);
-
-```
-
-
-* Handles `KeyEvent`:
-* `UP` → `sim.spawnVehicle(Direction.SOUTH)`
-* `DOWN` → `sim.spawnVehicle(Direction.NORTH)`
-* `RIGHT` → `sim.spawnVehicle(Direction.WEST)`
-* `LEFT` → `sim.spawnVehicle(Direction.EAST)`
-* `R` → `sim.spawnVehicle(random Direction)`
-* `ESCAPE` → `Platform.exit()`
-
-
-
-> **How Mimoun works alone:** Hardcode a static list of 2 dummy vehicles and 4 dummy lights to write and polish all rendering code before Abdelkafy and Med finish.
+This project is provided as a coursework/demo simulation and is intended for educational use.
