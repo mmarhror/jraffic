@@ -1,7 +1,7 @@
 package traffic;
 
 import java.util.ArrayList;
-import java.util.HashMap;
+import java.util.EnumMap;
 import java.util.List;
 import java.util.Map;
 import shared.Config;
@@ -10,111 +10,129 @@ import shared.LightColor;
 import simulation.Simulation;
 
 public class LightController {
-  private static final double LIGHT_SWITCH_INTERVAL = 3000.0;
-  private static final List<Direction> CYCLE =
-      List.of(Direction.NORTH, Direction.SOUTH, Direction.EAST, Direction.WEST);
+    private static final double EXTENSION_SECONDS = 3.0;
 
-  private Map<Direction, TrafficLight> lights = new HashMap<>();
-  private Direction currGreen;
-  private double greenTimer;
-  private boolean extended;
-
-  public LightController() {
-    for (Direction d : Direction.values()) {
-      this.lights.put(d, new TrafficLight(d));
+    private enum Phase {
+        NORTH_GREEN,
+        ALL_RED_AFTER_NORTH,
+        SOUTH_GREEN,
+        ALL_RED_AFTER_SOUTH,
+        EAST_GREEN,
+        ALL_RED_AFTER_EAST,
+        WEST_GREEN,
+        ALL_RED_AFTER_WEST
     }
 
-    this.currGreen = Direction.NORTH;
-    this.greenTimer = LIGHT_SWITCH_INTERVAL;
-    this.extended = false;
+    private final Map<Direction, TrafficLight> lights = new EnumMap<>(Direction.class);
+    private Phase phase = Phase.NORTH_GREEN;
+    private double remaining = Config.GREEN_TIME;
+    private boolean extensionUsed;
 
-    applyLights();
-  }
-
-  public LightColor getLightFor(Direction dir) {
-    return lights.get(dir).getColor();
-  }
-
-  public List<TrafficLight> getLights() {
-    return new ArrayList<>(lights.values());
-  }
-
-  private void applyLights() {
-    for (Direction d : Direction.values()) {
-      lights.get(d).setColor(d == currGreen ? LightColor.GREEN : LightColor.RED);
-    }
-  }
-
-  public void update(double secs, Simulation sim) {
-    double ms = secs * 1000.0;
-    greenTimer -= ms;
-
-    if (greenTimer <= 0) {
-      if (isOccupied(sim)) {
-        delaySwitch();
-      }
-
-      if (shouldExtend(sim)) {
-        applyExtension();
-        return;
-      }
-
-      switchToNextLight(sim);
-    }
-  }
-
-  // Delay
-  private boolean isOccupied(Simulation sim) {
-    if (sim == null) return false;
-    return sim.isIntersectionOccupied();
-  }
-
-  private void delaySwitch() {
-    greenTimer = 100.0;
-  }
-
-  // Extention
-  private boolean shouldExtend(Simulation sim) {
-    if (extended) {
-      return false;
+    public LightController() {
+        for (Direction direction : Direction.values()) {
+            lights.put(direction, new TrafficLight(direction));
+        }
+        applyLights();
     }
 
-    int waiting = getWaiting(currGreen, sim);
-    int threshold = (int) Math.ceil(Config.LANE_CAPACITY * 0.8);
-
-    return waiting >= threshold;
-  }
-
-  private void applyExtension() {
-    this.greenTimer = 3000.0;
-    this.extended = true;
-  }
-
-  // Switch
-  private void switchToNextLight(Simulation sim) {
-    Direction next = pickNextDirection(sim);
-    this.currGreen = next;
-    this.greenTimer = 3000.0;
-    this.extended = false;
-
-    applyLights();
-  }
-
-  private Direction pickNextDirection(Simulation sim) {
-    int start = CYCLE.indexOf(currGreen);
-
-    for (int i = 1; i <= 4; i++) {
-      Direction candidate = CYCLE.get((start + i) % 4);
-      if (getWaiting(candidate, sim) > 0) {
-        return candidate;
-      }
+    public LightColor getLightFor(Direction direction) {
+        return lights.get(direction).getColor();
     }
 
-    return CYCLE.get((start + 1) % 4);
-  }
+    public List<TrafficLight> getLights() {
+        return new ArrayList<>(lights.values());
+    }
 
-  private int getWaiting(Direction dir, Simulation sim) {
-    if (sim == null) return 0;
-    return sim.getWaitingCount(dir);
-  }
+    public void update(double seconds, Simulation simulation) {
+        if (seconds <= 0.0) {
+            return;
+        }
+
+        remaining -= seconds;
+        if (remaining > 0.0) {
+            return;
+        }
+
+        if (isGreenPhase() && shouldExtend(simulation) && !extensionUsed) {
+            remaining = EXTENSION_SECONDS;
+            extensionUsed = true;
+            return;
+        }
+
+        if (isGreenPhase() && simulation != null && simulation.isIntersectionOccupied()) {
+            remaining = 0.1;
+            return;
+        }
+
+        advancePhase();
+    }
+
+    private boolean isGreenPhase() {
+        return phase == Phase.NORTH_GREEN || phase == Phase.SOUTH_GREEN
+                || phase == Phase.EAST_GREEN || phase == Phase.WEST_GREEN;
+    }
+
+    private Direction greenDirection() {
+        switch (phase) {
+            case NORTH_GREEN:
+                return Direction.NORTH;
+            case SOUTH_GREEN:
+                return Direction.SOUTH;
+            case EAST_GREEN:
+                return Direction.EAST;
+            case WEST_GREEN:
+                return Direction.WEST;
+            default:
+                return null;
+        }
+    }
+
+    private boolean shouldExtend(Simulation simulation) {
+        if (simulation == null || greenDirection() == null) {
+            return false;
+        }
+        int threshold = (int) Math.ceil(Config.LANE_CAPACITY * 0.8);
+        return simulation.getQueueLength(greenDirection()) >= threshold;
+    }
+
+    private void advancePhase() {
+        switch (phase) {
+            case NORTH_GREEN:
+                phase = Phase.ALL_RED_AFTER_NORTH;
+                break;
+            case ALL_RED_AFTER_NORTH:
+                phase = Phase.SOUTH_GREEN;
+                break;
+            case SOUTH_GREEN:
+                phase = Phase.ALL_RED_AFTER_SOUTH;
+                break;
+            case ALL_RED_AFTER_SOUTH:
+                phase = Phase.EAST_GREEN;
+                break;
+            case EAST_GREEN:
+                phase = Phase.ALL_RED_AFTER_EAST;
+                break;
+            case ALL_RED_AFTER_EAST:
+                phase = Phase.WEST_GREEN;
+                break;
+            case WEST_GREEN:
+                phase = Phase.ALL_RED_AFTER_WEST;
+                break;
+            case ALL_RED_AFTER_WEST:
+                phase = Phase.NORTH_GREEN;
+                break;
+            default:
+                break;
+        }
+        remaining = isGreenPhase() ? Config.GREEN_TIME : Config.ALL_RED_TIME;
+        extensionUsed = false;
+        applyLights();
+    }
+
+    private void applyLights() {
+        Direction green = greenDirection();
+        for (Direction direction : Direction.values()) {
+            lights.get(direction).setColor(direction == green ? LightColor.GREEN : LightColor.RED);
+        }
+    }
 }
