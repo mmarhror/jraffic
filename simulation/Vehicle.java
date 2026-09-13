@@ -9,7 +9,12 @@ import shared.Turn;
 
 public class Vehicle {
     private static final double HALF_LANE = Config.LANE_WIDTH / 2.0;
-    private static final double ROUTE_END = Config.WINDOW_W + Config.VEHICLE_LENGTH / 2.0;
+
+    // Off-screen targets (separate X/Y so non-square windows work correctly)
+    private static final double OFF_LEFT = -Config.VEHICLE_LENGTH;
+    private static final double OFF_RIGHT = Config.WINDOW_W + Config.VEHICLE_LENGTH;
+    private static final double OFF_TOP = -Config.VEHICLE_LENGTH;
+    private static final double OFF_BOTTOM = Config.WINDOW_H + Config.VEHICLE_LENGTH;
 
     private final Direction direction;
     private final Turn turn;
@@ -95,41 +100,116 @@ public class Vehicle {
         return angle;
     }
 
+    /**
+     * Lane convention (right-hand driving):
+     *   moving SOUTH -> x = cx - HALF_LANE
+     *   moving NORTH -> x = cx + HALF_LANE
+     *   moving WEST  -> y = cy - HALF_LANE
+     *   moving EAST  -> y = cy + HALF_LANE
+     *
+     * Each turn is a quarter circle: it starts at the stop-line edge,
+     * bends around the lane corner (used as the Bezier control point),
+     * and ends on the exit-lane edge. This makes right turns tight
+     * (they curve BEFORE the center) and left turns sweep wide.
+     */
     private List<Point> createRoute() {
-        double centerX = Config.CENTER_X;
-        double centerY = Config.CENTER_Y;
-        double leftLane = centerX - HALF_LANE;
-        double rightLane = centerX + HALF_LANE;
-        double topLane = centerY - HALF_LANE;
-        double bottomLane = centerY + HALF_LANE;
-        double half = Config.INTERSECTION_HALF;
+        double cx = Config.CENTER_X;
+        double cy = Config.CENTER_Y;
+        double edge = Config.INTERSECTION_HALF;
         double stopOffset = Config.VEHICLE_LENGTH / 2.0;
-        double stopNear = centerX - half - stopOffset;
-        double stopFar = centerX + half + stopOffset;
-        double end = ROUTE_END;
+
+        double southLane = cx - HALF_LANE; // traffic moving south
+        double northLane = cx + HALF_LANE; // traffic moving north
+        double westLane = cy - HALF_LANE;  // traffic moving west
+        double eastLane = cy + HALF_LANE;  // traffic moving east
+
         List<double[]> coordinates = new ArrayList<>();
 
         switch (direction) {
-            case NORTH:
-                coordinates.add(new double[] {leftLane, -stopOffset});
-                coordinates.add(new double[] {leftLane, stopNear});
-                addTurn(coordinates, turn, leftLane, centerY, end, true);
+            case NORTH: {
+                double laneX = southLane; // spawns at top, moves south
+                coordinates.add(new double[] {laneX, OFF_TOP});
+                coordinates.add(new double[] {laneX, cy - edge - stopOffset});
+                if (turn == Turn.STRAIGHT) {
+                    coordinates.add(new double[] {laneX, OFF_BOTTOM});
+                } else if (turn == Turn.RIGHT) {          // -> moving west
+                    coordinates.add(new double[] {laneX, cy - edge});
+                    addQuarterTurn(coordinates, laneX, cy - edge,
+                            laneX, westLane,
+                            cx - edge, westLane);
+                    coordinates.add(new double[] {OFF_LEFT, westLane});
+                } else {                                   // LEFT -> moving east
+                    coordinates.add(new double[] {laneX, cy - edge});
+                    addQuarterTurn(coordinates, laneX, cy - edge,
+                            laneX, eastLane,
+                            cx + edge, eastLane);
+                    coordinates.add(new double[] {OFF_RIGHT, eastLane});
+                }
                 break;
-            case SOUTH:
-                coordinates.add(new double[] {rightLane, Config.WINDOW_H + stopOffset});
-                coordinates.add(new double[] {rightLane, stopFar});
-                addTurn(coordinates, turn, rightLane, centerY, -stopOffset, false);
+            }
+            case SOUTH: {
+                double laneX = northLane; // spawns at bottom, moves north
+                coordinates.add(new double[] {laneX, OFF_BOTTOM});
+                coordinates.add(new double[] {laneX, cy + edge + stopOffset});
+                if (turn == Turn.STRAIGHT) {
+                    coordinates.add(new double[] {laneX, OFF_TOP});
+                } else if (turn == Turn.RIGHT) {          // -> moving east
+                    coordinates.add(new double[] {laneX, cy + edge});
+                    addQuarterTurn(coordinates, laneX, cy + edge,
+                            laneX, eastLane,
+                            cx + edge, eastLane);
+                    coordinates.add(new double[] {OFF_RIGHT, eastLane});
+                } else {                                   // LEFT -> moving west
+                    coordinates.add(new double[] {laneX, cy + edge});
+                    addQuarterTurn(coordinates, laneX, cy + edge,
+                            laneX, westLane,
+                            cx - edge, westLane);
+                    coordinates.add(new double[] {OFF_LEFT, westLane});
+                }
                 break;
-            case EAST:
-                coordinates.add(new double[] {Config.WINDOW_W + stopOffset, topLane});
-                coordinates.add(new double[] {stopFar, topLane});
-                addTurn(coordinates, turn, centerX, topLane, -stopOffset, false);
+            }
+            case EAST: {
+                double laneY = westLane; // spawns at right, moves west
+                coordinates.add(new double[] {OFF_RIGHT, laneY});
+                coordinates.add(new double[] {cx + edge + stopOffset, laneY});
+                if (turn == Turn.STRAIGHT) {
+                    coordinates.add(new double[] {OFF_LEFT, laneY});
+                } else if (turn == Turn.RIGHT) {          // -> moving north
+                    coordinates.add(new double[] {cx + edge, laneY});
+                    addQuarterTurn(coordinates, cx + edge, laneY,
+                            northLane, laneY,
+                            northLane, cy - edge);
+                    coordinates.add(new double[] {northLane, OFF_TOP});
+                } else {                                   // LEFT -> moving south
+                    coordinates.add(new double[] {cx + edge, laneY});
+                    addQuarterTurn(coordinates, cx + edge, laneY,
+                            southLane, laneY,
+                            southLane, cy + edge);
+                    coordinates.add(new double[] {southLane, OFF_BOTTOM});
+                }
                 break;
-            case WEST:
-                coordinates.add(new double[] {-stopOffset, bottomLane});
-                coordinates.add(new double[] {stopNear, bottomLane});
-                addTurn(coordinates, turn, centerX, bottomLane, end, true);
+            }
+            case WEST: {
+                double laneY = eastLane; // spawns at left, moves east
+                coordinates.add(new double[] {OFF_LEFT, laneY});
+                coordinates.add(new double[] {cx - edge - stopOffset, laneY});
+                if (turn == Turn.STRAIGHT) {
+                    coordinates.add(new double[] {OFF_RIGHT, laneY});
+                } else if (turn == Turn.RIGHT) {          // -> moving south
+                    coordinates.add(new double[] {cx - edge, laneY});
+                    addQuarterTurn(coordinates, cx - edge, laneY,
+                            southLane, laneY,
+                            southLane, cy + edge);
+                    coordinates.add(new double[] {southLane, OFF_BOTTOM});
+                } else {                                   // LEFT -> moving north
+                    coordinates.add(new double[] {cx - edge, laneY});
+                    addQuarterTurn(coordinates, cx - edge, laneY,
+                            northLane, laneY,
+                            northLane, cy - edge);
+                    coordinates.add(new double[] {northLane, OFF_TOP});
+                }
                 break;
+            }
             default:
                 break;
         }
@@ -137,48 +217,17 @@ public class Vehicle {
         return withDistances(coordinates);
     }
 
-    private void addTurn(List<double[]> coordinates, Turn selectedTurn, double entryX,
-            double entryY, double exitEnd, boolean positiveExit) {
-        if (selectedTurn == Turn.STRAIGHT) {
-            if (direction == Direction.NORTH || direction == Direction.SOUTH) {
-                coordinates.add(new double[] {entryX, exitEnd});
-            } else {
-                coordinates.add(new double[] {exitEnd, entryY});
-            }
-            return;
-        }
-
-        boolean turnLeft = selectedTurn == Turn.LEFT;
-        if (direction == Direction.NORTH || direction == Direction.SOUTH) {
-            boolean exitPositive = direction == Direction.NORTH ? turnLeft : !turnLeft;
-            double horizontalExit = exitPositive
-                    ? Config.CENTER_X + Config.INTERSECTION_HALF
-                    : Config.CENTER_X - Config.INTERSECTION_HALF;
-            double exitY = exitPositive
-                ? Config.CENTER_Y + Config.LANE_WIDTH / 2.0
-                : Config.CENTER_Y - Config.LANE_WIDTH / 2.0;
-            double exitX = exitPositive ? ROUTE_END : -Config.VEHICLE_LENGTH / 2.0;
-            coordinates.add(new double[] {entryX, exitY});
-            coordinates.add(new double[] {horizontalExit, exitY});
-            coordinates.add(new double[] {
-                exitX,
-                exitY
-            });
-        } else {
-            double verticalExit = (direction == Direction.WEST) == turnLeft
-                    ? Config.CENTER_Y - Config.INTERSECTION_HALF
-                    : Config.CENTER_Y + Config.INTERSECTION_HALF;
-            boolean exitPositive = direction == Direction.WEST ? !turnLeft : turnLeft;
-            double exitY = exitPositive ? ROUTE_END : -Config.VEHICLE_LENGTH / 2.0;
-            double exitX = verticalExit == Config.CENTER_Y - Config.INTERSECTION_HALF
-                ? Config.CENTER_X + Config.LANE_WIDTH / 2.0
-                : Config.CENTER_X - Config.LANE_WIDTH / 2.0;
-            coordinates.add(new double[] {Config.CENTER_X, entryY});
-            coordinates.add(new double[] {Config.CENTER_X, verticalExit});
-            coordinates.add(new double[] {
-                exitX,
-                exitY
-            });
+    private void addQuarterTurn(List<double[]> route, double startX, double startY,
+            double controlX, double controlY, double endX, double endY) {
+        final int curveSteps = 12;
+        for (int step = 1; step <= curveSteps; step++) {
+            double t = step / (double) curveSteps;
+            double inverse = 1.0 - t;
+            double px = inverse * inverse * startX + 2.0 * inverse * t * controlX
+                    + t * t * endX;
+            double py = inverse * inverse * startY + 2.0 * inverse * t * controlY
+                    + t * t * endY;
+            route.add(new double[] {px, py});
         }
     }
 
